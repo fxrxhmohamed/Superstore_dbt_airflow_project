@@ -1,0 +1,85 @@
+version: 2
+
+models:
+  - name: dim_customer
+    description: One row per customer
+    columns:
+      - name: customer_id
+        data_tests:
+          - unique
+          - not_null
+
+  - name: dim_product
+    description: One row per (product_id, product_name)
+    columns:
+      - name: product_key
+        data_tests:
+          - unique
+          - not_null
+      - name: product_id
+        data_tests:
+          - not_null
+
+  - name: dim_location
+    description: One row per (postal_code, city, state)
+    columns:
+      - name: location_key
+        data_tests:
+          - unique
+          - not_null
+
+  - name: dim_date
+    description: Calendar dimension, one row per day
+    columns:
+      - name: date_key
+        data_tests:
+          - unique
+          - not_null
+
+  - name: fact_sales
+    description: Sales fact, one row per order line
+    columns:
+      - name: row_id
+        data_tests:
+          - unique
+          - not_null
+
+      - name: customer_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customer')
+                field: customer_id
+
+      - name: product_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_product')
+                field: product_key
+
+      - name: location_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_location')
+                field: location_key
+
+      - name: order_date_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+
+      - name: ship_date_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key

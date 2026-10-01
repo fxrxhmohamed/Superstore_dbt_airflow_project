@@ -1,0 +1,7 @@
+dbt_project:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: dev.duckdb      # relative to the folder dbt runs in (dbt_project/)
+      threads: 1

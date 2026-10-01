@@ -1,0 +1,26 @@
+name: 'dbt_project'
+version: '1.0.0'
+
+# Connection profile defined in ~/.dbt/profiles.yml
+profile: 'dbt_project'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# Layers: ods (loaded by scripts/load_to_ods.py) -> staging (views) -> marts / dwh (tables)
+models:
+  dbt_project:
+    staging:
+      +schema: stg
+      +materialized: view
+    marts:
+      +schema: dwh
+      +materialized: table

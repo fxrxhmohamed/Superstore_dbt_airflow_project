@@ -1,0 +1,67 @@
+version: 2
+
+models:
+  - name: stg_superstore
+    description: Cleaned and typed Superstore order lines (one row per order line)
+    columns:
+      - name: row_id
+        description: Unique identifier of the order line
+        data_tests:
+          - unique
+          - not_null
+
+      - name: order_id
+        data_tests:
+          - not_null
+
+      - name: order_date
+        data_tests:
+          - not_null
+
+      - name: ship_date
+        data_tests:
+          - not_null
+
+      - name: ship_mode
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Same Day', 'First Class', 'Second Class', 'Standard Class']
+
+      - name: customer_id
+        data_tests:
+          - not_null
+
+      - name: segment
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Consumer', 'Corporate', 'Home Office']
+
+      - name: region
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Central', 'East', 'South', 'West']
+
+      - name: postal_code
+        data_tests:
+          - not_null
+
+      - name: product_id
+        data_tests:
+          - not_null
+
+      - name: category
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Furniture', 'Office Supplies', 'Technology']
+
+      - name: sales
+        data_tests:
+          - not_null
+
+      - name: quantity
+        data_tests:
+          - not_null

@@ -1,0 +1,23 @@
+version: 2
+
+sources:
+  - name: ods
+    description: Operational data store, loaded as-is from data/raw/Superstore.xlsx by scripts/load_to_ods.py
+    schema: ods
+    tables:
+      - name: raw_superstore
+        description: One row per order line from the 'Sample - Superstore' sheet
+        columns:
+          - name: row_id
+            data_tests:
+              - unique
+              - not_null
+          - name: order_id
+            data_tests:
+              - not_null
+          - name: customer_id
+            data_tests:
+              - not_null
+          - name: product_id
+            data_tests:
+              - not_null
