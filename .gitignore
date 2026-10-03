@@ -1,0 +1,11 @@
+# Airflow task logs and local dbt logs
+airflow/logs/
+logs/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# DuckDB databases are rebuilt by the pipeline
+*.duckdb
+*.duckdb.wal
