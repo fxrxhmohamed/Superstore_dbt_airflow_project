@@ -56,16 +56,60 @@ docker compose up -d      # start Airflow in the background
 Scheduled **`@daily`** · retries **1×** after 2 min · each task runs only if the previous one succeeded.
 
 ```
-dbt_debug ──► load_to_ods ──► dbt_test_sources ──► dbt_run ──► dbt_test
+dbt_debug ─► load_to_ods ─► dbt_test_sources ─► dbt_run_staging ─► dbt_test_staging ─► dbt_run_marts ─► dbt_test_marts
 ```
 
-| # | Task | What it does | Why it matters |
+Every layer is **built, then tested right away**, so a red task tells you exactly which layer broke, and a broken layer never feeds the next one.
+
+| # | Task | Command | What it does |
 |:-:|---|---|---|
-| 1 |  `dbt_debug` | Checks dbt's config and its connection to DuckDB | Fails fast before anything is changed |
-| 2 |  `load_to_ods` | Loads `Superstore.xlsx` into `ods.raw_superstore` (9,994 rows) | Brings fresh source data in |
-| 3 |  `dbt_test_sources` | Tests the raw data: `row_id` unique, keys not null | Bad data never reaches the warehouse |
-| 4 |  `dbt_run` | Builds `stg_superstore`, then the 4 dimensions, then `fact_sales` | Rebuilds the warehouse |
-| 5 |  `dbt_test` | Runs all data tests, including the **ODS ↔ DWH reconciliation** | Proves no rows or amounts were lost |
+| 1 | `dbt_debug` | `dbt debug` | Checks dbt's config and its connection to DuckDB, fails fast before anything changes |
+| 2 | `load_to_ods` | `python scripts/load_to_ods.py` | Loads `Superstore.xlsx` into `ods.raw_superstore` (9,994 rows) |
+| 3 | `dbt_test_sources` | `dbt test --select source:ods` | **5 tests** on the raw data: `row_id` unique, keys not null |
+| 4 | `dbt_run_staging` | `dbt run --select staging` | Builds the `stg_superstore` view |
+| 5 | `dbt_test_staging` | `dbt test --select staging --exclude source:ods` | **14 tests** on the cleaned data: keys not null, allowed values |
+| 6 | `dbt_run_marts` | `dbt run --select marts` | Builds the 4 dimensions, then `fact_sales` |
+| 7 | `dbt_test_marts` | `dbt test --select marts` | **22 tests**: dimension keys, fact → dim relationships and the **ODS ↔ DWH reconciliation** |
+
+![Successful DAG run in Airflow](docs/images/airflow_dag_run.png)
+
+---
+
+## ✅ Data Quality Tests
+
+**41 tests** guard the pipeline, run in three checkpoints, one after each layer. The full list, test by test, is in [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md).
+
+| Checkpoint | Model | `unique` | `not_null` | `accepted_values` | `relationships` | Custom | Total |
+|---|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| `dbt_test_sources` | `ods.raw_superstore` | 1 | 4 | – | – | – | **5** |
+| `dbt_test_staging` | `stg_superstore` | 1 | 9 | 4 | – | – | **14** |
+| `dbt_test_marts` | `dim_customer` | 1 | 1 | – | – | – | 2 |
+| | `dim_product` | 1 | 2 | – | – | – | 3 |
+| | `dim_location` | 1 | 1 | – | – | – | 2 |
+| | `dim_date` | 1 | 1 | – | – | – | 2 |
+| | `fact_sales` | 1 | 6 | – | 5 | 1 | 13 |
+| | | | | | | | **41** |
+
+What each kind of test proves:
+
+- **`unique` / `not_null`**: every table keeps its grain, no duplicated or missing keys
+- **`accepted_values`**: `ship_mode`, `segment`, `region` and `category` only hold known values
+- **`relationships`**: every `fact_sales` row points to an existing customer, product, location, order date and ship date
+- **`assert_fact_sales_reconciles_with_ods`** (custom, [tests/](dbt_project/tests/assert_fact_sales_reconciles_with_ods.sql)): row count, total `sales` and total `profit` in `fact_sales` match the ODS within 0.01, so nothing was lost or duplicated on the way
+
+### Test results
+
+**1. Sources**, after `load_to_ods`
+
+![dbt_test_sources output](docs/images/dbt_test_sources.png)
+
+**2. Staging**, after `dbt_run_staging`
+
+![dbt_test_staging output](docs/images/dbt_test_staging.png)
+
+**3. Marts**, after `dbt_run_marts`
+
+![dbt_test_marts output](docs/images/dbt_test_marts.png)
 
 ---
 
@@ -99,6 +143,7 @@ Dbt_project/
 │   ├── docker-compose.yaml          # mounts this whole folder into the container
 │   └── requirements-dbt.txt         # pinned dbt / DuckDB versions
 ├── data/raw/Superstore.xlsx         # source data
+├── docs/                            # data quality test catalogue + screenshots
 ├── scripts/load_to_ods.py           # Excel → ODS loader
 └── dbt_project/
     ├── models/staging/              # sources + stg_superstore
@@ -116,7 +161,14 @@ Useful while developing models. Run these from `dbt_project/` with **dbt-core** 
 
 ```powershell
 python ..\scripts\load_to_ods.py     # → Loaded ods.raw_superstore: 9994 rows
-dbt build --profiles-dir .           # → PASS=47 WARN=0 ERROR=0
+dbt build --profiles-dir .           # → PASS=47 WARN=0 ERROR=0 (6 models + 41 tests)
+
+# or layer by layer, like the DAG does
+dbt test --select source:ods --indirect-selection cautious --profiles-dir .   # PASS=5
+dbt run  --select staging --profiles-dir .
+dbt test --select staging --exclude source:ods --profiles-dir .              # PASS=14
+dbt run  --select marts --profiles-dir .
+dbt test --select marts --profiles-dir .                                     # PASS=22
 dbt docs generate --profiles-dir .
 dbt docs serve --profiles-dir . --port 8081   # lineage graph (8080 is Airflow)
 ```
@@ -128,5 +180,6 @@ dbt docs serve --profiles-dir . --port 8081   # lineage graph (8080 is Airflow)
 | Symptom | Fix |
 |---|---|
 | `Could not set lock on file ... dev.duckdb` | Close any app using the database, then clear the failed task to re-run it |
+| `KeyError: 'dbt_duckdb://macros/catalog.sql'` | dbt's parse cache was written by dbt on the host. The DAG already passes `--no-partial-parse`; for manual runs in the container add it too, or delete `dbt_project/target/partial_parse.msgpack` |
 | DAG missing from the UI | `docker exec -it superstore-airflow airflow dags list-import-errors` |
 | Port 8080 already in use | Change the port mapping to `"8090:8080"` in `docker-compose.yaml` |

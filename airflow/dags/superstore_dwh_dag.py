@@ -8,8 +8,9 @@ DBT_DIR = f"{PROJECT_DIR}/dbt_project"
 VENV_BIN = "/opt/dbt_venv/bin"
 
 # every dbt command runs from the dbt project folder, using its own profiles.yml
+# --no-partial-parse: target/ is shared with dbt on the host, whose parse cache breaks the container's dbt
 DBT = f"cd {DBT_DIR} && {VENV_BIN}/dbt"
-DBT_FLAGS = "--profiles-dir . --target dev"
+DBT_FLAGS = "--profiles-dir . --target dev --no-partial-parse"
 
 default_args = {
     "owner": "dataops",
@@ -42,14 +43,35 @@ with DAG(
         bash_command=f"{DBT} test --select source:ods --indirect-selection cautious {DBT_FLAGS}",
     )
 
-    dbt_run = BashOperator(
-        task_id="dbt_run",
-        bash_command=f"{DBT} run {DBT_FLAGS}",
+    # each layer is built, then tested right away, so a failure points to the exact layer
+    dbt_run_staging = BashOperator(
+        task_id="dbt_run_staging",
+        bash_command=f"{DBT} run --select staging {DBT_FLAGS}",
     )
 
-    dbt_test = BashOperator(
-        task_id="dbt_test",
-        bash_command=f"{DBT} test {DBT_FLAGS}",
+    # source tests also live under models/staging, they already ran in dbt_test_sources
+    dbt_test_staging = BashOperator(
+        task_id="dbt_test_staging",
+        bash_command=f"{DBT} test --select staging --exclude source:ods {DBT_FLAGS}",
     )
 
-    dbt_debug >> load_to_ods >> dbt_test_sources >> dbt_run >> dbt_test
+    dbt_run_marts = BashOperator(
+        task_id="dbt_run_marts",
+        bash_command=f"{DBT} run --select marts {DBT_FLAGS}",
+    )
+
+    # also picks up the ODS <-> fact_sales reconciliation test, since it depends on fact_sales
+    dbt_test_marts = BashOperator(
+        task_id="dbt_test_marts",
+        bash_command=f"{DBT} test --select marts {DBT_FLAGS}",
+    )
+
+    (
+        dbt_debug
+        >> load_to_ods
+        >> dbt_test_sources
+        >> dbt_run_staging
+        >> dbt_test_staging
+        >> dbt_run_marts
+        >> dbt_test_marts
+    )
