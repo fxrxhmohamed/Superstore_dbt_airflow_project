@@ -72,6 +72,7 @@ Every layer is **built, then tested right away**, so a red task tells you exactl
 | 7 | `dbt_test_marts` | `dbt test --select marts` | **22 tests**: dimension keys, fact → dim relationships and the **ODS ↔ DWH reconciliation** |
 
 ![Successful DAG run in Airflow](docs/images/airflow_dag_run.png)
+![Successful DAG run in Airflow](docs/images/airflow_tasks_connected.png)
 
 ---
 
